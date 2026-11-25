@@ -1,0 +1,162 @@
+name: Render 2D Clips Hub (Preview / 20x Full)
+
+on:
+  workflow_dispatch:
+    inputs:
+      episode:
+        description: "Episode directory under episodes/<episode>"
+        required: true
+        default: "_template"
+        type: string
+      mode:
+        description: "Pipeline stage: preview (storyboard stills) or full (20x parallel Chromium+FFmpeg)"
+        required: true
+        default: "preview"
+        type: choice
+        options:
+          - preview
+          - full
+      project_slug:
+        description: "Output MP4 basename (optional, defaults to episode name)"
+        required: false
+        default: ""
+        type: string
+      aspect:
+        description: "Aspect ratio selector (16x9 or 9x16)"
+        required: false
+        default: "16x9"
+        type: choice
+        options:
+          - 16x9
+          - 9x16
+
+jobs:
+  preview:
+    if: inputs.mode == 'preview'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      EP: ${{ inputs.episode }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install FFmpeg and verify Chrome
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg >/dev/null
+          google-chrome --version || chromium-browser --version
+      - name: Render storyboard PNG stills
+        run: |
+          test -f "episodes/${EP}/src/beats.mjs"
+          test -f "episodes/${EP}/src/sets/renderFrame.mjs"
+          node engine/render_preview_ci.mjs "episodes/${EP}"
+      - name: Tile storyboard grid
+        run: |
+          cd "episodes/${EP}"
+          COUNT=$(ls out/preview/prev_*.png 2>/dev/null | wc -l)
+          test "$COUNT" -ge 1
+          COLS=3
+          ROWS=$(( (COUNT + COLS - 1) / COLS ))
+          ffmpeg -y -hide_banner -loglevel error \
+            -pattern_type glob -i "out/preview/prev_*.png" \
+            -vf "scale=480:-2,tile=${COLS}x${ROWS}" -frames:v 1 out/storyboard_grid.png
+      - uses: actions/upload-artifact@v4
+        with:
+          name: 2d-preview-${{ inputs.episode }}
+          path: |
+            episodes/${{ inputs.episode }}/out/storyboard_grid.png
+            episodes/${{ inputs.episode }}/out/preview/*.png
+          retention-days: 3
+
+  render:
+    if: inputs.mode == 'full'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix:
+        chunk: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+    env:
+      EP: ${{ inputs.episode }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install FFmpeg and verify Chrome
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg >/dev/null
+          google-chrome --version || chromium-browser --version
+      - name: Render chunk ${{ matrix.chunk }} of 20
+        run: |
+          test -f "episodes/${EP}/src/beats.mjs"
+          test -f "episodes/${EP}/src/sets/renderFrame.mjs"
+          node engine/render_chunk_ci.mjs "episodes/${EP}" ${{ matrix.chunk }} 20
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chunk-${{ matrix.chunk }}
+          path: episodes/${{ inputs.episode }}/out/ci_chunks/chunk_*.mp4
+          if-no-files-found: ignore
+          retention-days: 1
+
+  merge:
+    needs: render
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      EP: ${{ inputs.episode }}
+      SLUG: ${{ inputs.project_slug || inputs.episode }}
+      ASPECT: ${{ inputs.aspect || '16x9' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install FFmpeg
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg >/dev/null
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: chunk-*
+          path: episodes/${{ inputs.episode }}/out/all_chunks
+          merge-multiple: true
+      - name: Concatenate chunks, mux audio if present, and verify
+        run: |
+          cd "episodes/${EP}"
+          COUNT=$(ls out/all_chunks/chunk_*.mp4 2>/dev/null | wc -l)
+          echo "Found $COUNT chunk file(s)"
+          test "$COUNT" -ge 1
+          for f in $(ls out/all_chunks/chunk_*.mp4 | sort); do
+            echo "file '$(pwd)/$f'" >> out/chunks.txt
+          done
+          ffmpeg -y -hide_banner -loglevel error \
+            -f concat -safe 0 -i out/chunks.txt \
+            -c:v copy out/silent_video.mp4
+          AUDIO=""
+          if [ -f "assets/audio/master_audio.m4a" ]; then
+            AUDIO="assets/audio/master_audio.m4a"
+          elif [ -f "assets/audio/vo_clean.m4a" ]; then
+            AUDIO="assets/audio/vo_clean.m4a"
+          fi
+          OUT_MP4="out/${SLUG}_${ASPECT}.mp4"
+          if [ -n "$AUDIO" ]; then
+            ffmpeg -y -hide_banner -loglevel error \
+              -i out/silent_video.mp4 -i "$AUDIO" \
+              -c:v copy -c:a copy -movflags +faststart \
+              "$OUT_MP4"
+          else
+            cp out/silent_video.mp4 "$OUT_MP4"
+          fi
+          ffprobe -v error \
+            -show_entries format=duration,size:stream=codec_type,codec_name,width,height,r_frame_rate,duration,nb_read_packets \
+            -count_packets -of default=noprint_wrappers=1 "$OUT_MP4"
+          DUR=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$OUT_MP4" | awk '{printf "%.2f", $1}')
+          STEP=$(awk -v d="$DUR" 'BEGIN { s = d / 9.0; if (s < 0.1) s = 0.1; printf "%.4f", s }')
+          ffmpeg -y -hide_banner -loglevel error \
+            -i "$OUT_MP4" \
+            -vf "fps=1/${STEP},scale=320:-2,tile=3x3" -frames:v 1 out/verify_contact.png
+      - uses: actions/upload-artifact@v4
+        with:
+          name: 2d-final-${{ inputs.episode }}
+          path: |
+            episodes/${{ inputs.episode }}/out/*.mp4
+            episodes/${{ inputs.episode }}/out/verify_contact.png
+          retention-days: 5
