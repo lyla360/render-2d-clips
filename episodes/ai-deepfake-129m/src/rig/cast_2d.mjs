@@ -331,8 +331,8 @@ function drawHair(c, view, sw, ox) {
   if (hairStyle === "bob_bangs") {
     return `
       <g>
-        <path d="M -46 ${cy - 4} C -48 ${cy - 48}, 48 ${cy - 48}, 46 ${cy - 4} C 32 ${cy - 20}, 12 ${cy - 22}, ${dx + 4} ${cy - 29} C ${dx - 8} ${cy - 20}, -30 ${cy - 18}, -46 ${cy - 4} Z" fill="${hair}" stroke="${PALETTE.ink}" stroke-width="${sw}" stroke-linejoin="round"/>
-        <path d="M -22 ${cy - 32} Q 0 ${cy - 40} 22 ${cy - 32}" fill="none" stroke="${hairHi}" stroke-width="2.5" stroke-linecap="round"/>
+        <path d="M -46 ${cy - 4} C -48 ${cy - 60}, 48 ${cy - 60}, 46 ${cy - 4} C 32 ${cy - 20}, 12 ${cy - 22}, ${dx + 4} ${cy - 29} C ${dx - 8} ${cy - 20}, -30 ${cy - 18}, -46 ${cy - 4} Z" fill="${hair}" stroke="${PALETTE.ink}" stroke-width="${sw}" stroke-linejoin="round"/>
+        <path d="M -22 ${cy - 34} Q 0 ${cy - 43} 22 ${cy - 34}" fill="none" stroke="${hairHi}" stroke-width="2.5" stroke-linecap="round"/>
       </g>
     `;
   }

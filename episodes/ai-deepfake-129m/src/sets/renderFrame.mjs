@@ -908,7 +908,7 @@ export function renderFrameSvg(frame, loudnessArr = [], opts = {}) {
     ? `<rect x="96" y="54" width="1728" height="972" fill="none" stroke="#FACC15" stroke-width="3" stroke-dasharray="16,10" opacity="0.85" pointer-events="none"/>`
     : "";
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}">
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}" direction="ltr" xml:lang="en" style="direction: ltr; unicode-bidi: embed;">
     ${sceneContent}
     ${safeGuide}
   </svg>`;
