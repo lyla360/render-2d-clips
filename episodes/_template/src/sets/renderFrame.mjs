@@ -1,4 +1,4 @@
-import { PALETTES } from "../../../engine/fajwah/palette.mjs";
+import { PALETTES } from "../../../../engine/fajwah/palette.mjs";
 
 export function renderFrameSvg(frame, loudness = [], _opts = {}) {
   const t = frame / 60;
